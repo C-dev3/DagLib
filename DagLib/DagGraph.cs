@@ -247,6 +247,71 @@ public sealed class DagGraph<T>
     }
 
     /// <summary>
+    /// Given a node that has just finished executing, resolves which of its
+    /// outgoing nodes should run next. Unlike <see cref="TopologicalSort"/>,
+    /// which resolves an entire execution order up front, this walks the graph
+    /// one step at a time — letting the caller make branch/sequence decisions
+    /// based on runtime state that couldn't be known ahead of time.
+    /// </summary>
+    /// <remarks>
+    /// The result's length carries meaning: zero when execution should stop
+    /// here, one for a simple linear step, and more than one when several
+    /// outputs should be followed at once (e.g. a "sequence" node). Nodes with
+    /// a single output can simply pass <paramref name="selectNextNodes"/>'s
+    /// second argument straight through — this method still calls the selector
+    /// in that case, so branching logic doesn't need a separate code path for it.
+    /// </remarks>
+    /// <param name="current">The node that just finished executing.</param>
+    /// <param name="selectNextNodes">
+    /// Given the current node and its full list of outgoing nodes, returns the
+    /// subset (in any order, including all or none of them) that should run
+    /// next. Called even when there is only one candidate, so a single
+    /// selector can uniformly handle linear steps, branches, and sequences.
+    /// </param>
+    /// <returns>
+    /// The nodes to run next, in the order returned by
+    /// <paramref name="selectNextNodes"/>. Empty if <paramref name="current"/>
+    /// has no outgoing nodes.
+    /// </returns>
+    /// <exception cref="ArgumentException">
+    /// <paramref name="current"/> does not belong to this graph.
+    /// </exception>
+    public IReadOnlyList<Node<T>> GetNextNodes(
+        Node<T> current,
+        Func<Node<T>, IReadOnlyList<Node<T>>, IReadOnlyList<Node<T>>> selectNextNodes)
+    {
+        if (!_nodes.ContainsKey(current.Id))
+            throw new ArgumentException("The given node does not belong to this graph.", nameof(current));
+
+        if (current.Outputs.Count == 0)
+            return [];
+
+        return selectNextNodes(current, current.Outputs);
+    } 
+
+    /// <summary>
+    /// Returns the nodes immediately downstream of <paramref name="current"/>,
+    /// with no branching or filtering applied. Equivalent to calling
+    /// <see cref="GetNextNodes(Node{T}, Func{Node{T}, IReadOnlyList{Node{T}}, IReadOnlyList{Node{T}}})"/>
+    /// with a selector that passes every output straight through.
+    /// </summary>
+    /// <param name="current">The node whose outputs to look up.</param>
+    /// <returns>
+    /// Every node <paramref name="current"/> points to, in no particular order.
+    /// Empty if <paramref name="current"/> has no outgoing nodes.
+    /// </returns>
+    /// <exception cref="ArgumentException">
+    /// <paramref name="current"/> does not belong to this graph.
+    /// </exception>
+    public IReadOnlyList<Node<T>> GetNextNodes(Node<T> current)
+    {
+        if (!_nodes.ContainsKey(current.Id))
+            throw new ArgumentException("The given node does not belong to this graph.", nameof(current));
+
+        return current.Outputs;
+    }
+
+    /// <summary>
     /// Finds every node reachable by following edges forward from <paramref name="start"/>.
     /// </summary>
     /// <remarks>

@@ -15,7 +15,7 @@
 
   <PropertyGroup>
     <PackageId>DagLib</PackageId>
-    <Version>1.1.0</Version>
+    <Version>1.1.1</Version>
     <Authors>C</Authors>
     <Company>C</Company>
 	  <Description>A generic DAG (directed acyclic graph) library with Guid-based node identity and built-in cycle detection and topological sorting, designed to power the backend of node editor UIs such as ImNodes.</Description>

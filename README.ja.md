@@ -88,11 +88,18 @@ int imNodesId = mapper.GetOrCreateImNodesId(a.Id);
 より密接に連携させたい場合は、`ImNodesGraphView<T>` が `DagGraph<T>` と
 `NodeIdMapper` をまとめてラップしており、ImNodesのイベントハンドラを
 intIDのまま直接扱えます。呼び出し側で手動の相互変換を書く必要がありません。
+既存のgraphとmapperを渡すコンストラクタに加えて、よくある構成向けに
+軽量なコンストラクタが2つ用意されています。1つは引数無しで、内部で新しい
+`DagGraph<T>` と `NodeIdMapper` の両方を生成するもの。もう1つは既存の
+`graph` だけを渡し、`NodeIdMapper` の方は新規に生成するもの(保存済みの
+グラフを新しいUIセッションで開き直す際などに便利です)。
 
 ```csharp
 using DagLib;
 
-var view = new ImNodesGraphView<string>(graph, mapper);
+var view = new ImNodesGraphView<string>(graph, mapper); // 既存のgraphとmapperをラップ
+var view = new ImNodesGraphView<string>(graph);          // 既存のgraphをラップ、mapperは新規
+var view = new ImNodesGraphView<string>();               // 何もない状態から開始
 
 // IsLinkCreated イベントの処理
 view.AddEdge(fromImNodesId, toImNodesId);
@@ -108,6 +115,36 @@ foreach (var (node, id) in view.GetRenderableNodes())
     ImNodes.EndNode();
 }
 ```
+
+### ステップ実行(分岐のある処理)
+
+`TopologicalSort()` は実行順序を一括で確定させる方式なので、純粋なデータフローの
+グラフには向いていますが、if/elseノードやSequenceノードのように「次にどちらへ
+進むか」が実行時の条件次第で決まるグラフには適していません。そのような場合は、
+`GetNextNodes` を使ってグラフを1歩ずつ辿っていきます。
+
+```csharp
+var pending = new Queue<Node<ExecNode>>();
+pending.Enqueue(start);
+
+while (pending.Count > 0)
+{
+    var node = pending.Dequeue();
+    node.Data.Run?.Invoke();
+
+    // セレクタ無し: 出ているエッジをそのまま全部辿る
+    // 一部だけ選びたい場合はセレクタを渡す(例: if/elseの片方だけ選ぶ)
+    var next = node == branch
+        ? graph.GetNextNodes(node, (n, outputs) => [conditionResult ? outputs[0] : outputs[1]])
+        : graph.GetNextNodes(node);
+
+    foreach (var n in next)
+        pending.Enqueue(n);
+}
+```
+
+セレクタは複数のノードを返すこともできます。片方だけ選ぶ分岐ではなく、
+出ているエッジ全てを同時に進めたい「Sequence」ノードのような場面で使えます。
 
 ## ライセンス
 

@@ -63,12 +63,14 @@ int imNodesId = mapper.GetOrCreateImNodesId(a.Id);
 // pass imNodesId into the native API, e.g. ImNodes.BeginNode(imNodesId);
 ```
 
-For a tighter integration, `ImNodesGraphView<T>` wraps a `DagGraph<T>` and a `NodeIdMapper` together, so ImNodes event handlers can work directly with int IDs instead of manually translating back and forth:
+For a tighter integration, `ImNodesGraphView<T>` wraps a `DagGraph<T>` and a `NodeIdMapper` together, so ImNodes event handlers can work directly with int IDs instead of manually translating back and forth. Besides the constructor that takes an existing graph and mapper, two lighter-weight constructors are available for common setups: one that takes no arguments and creates both a new `DagGraph<T>` and a new `NodeIdMapper` internally, and one that takes only an existing `graph` and creates a fresh `NodeIdMapper` for it (handy when reopening a graph loaded from storage in a new UI session).
 
 ```csharp
 using DagLib;
 
-var view = new ImNodesGraphView<string>(graph, mapper);
+var view = new ImNodesGraphView<string>(graph, mapper); // wrap an existing graph and mapper
+var view = new ImNodesGraphView<string>(graph);          // wrap an existing graph, fresh mapper
+var view = new ImNodesGraphView<string>();               // start from scratch
 
 // Handling an IsLinkCreated event
 view.AddEdge(fromImNodesId, toImNodesId);
@@ -84,6 +86,32 @@ foreach (var (node, id) in view.GetRenderableNodes())
     ImNodes.EndNode();
 }
 ```
+
+### Step-by-step traversal (branching execution)
+
+`TopologicalSort()` resolves an entire execution order up front, which works well for pure data-flow graphs but doesn't fit graphs with runtime branching — an if/else node, a sequence node — where the next step depends on a condition that isn't known ahead of time. For those cases, `GetNextNodes` walks the graph one step at a time instead:
+
+```csharp
+var pending = new Queue<Node<ExecNode>>();
+pending.Enqueue(start);
+
+while (pending.Count > 0)
+{
+    var node = pending.Dequeue();
+    node.Data.Run?.Invoke();
+
+    // No selector: just follow every outgoing edge as-is.
+    // Pass a selector to pick a subset instead — e.g. only one branch of an if/else.
+    var next = node == branch
+        ? graph.GetNextNodes(node, (n, outputs) => [conditionResult ? outputs[0] : outputs[1]])
+        : graph.GetNextNodes(node);
+
+    foreach (var n in next)
+        pending.Enqueue(n);
+}
+```
+
+A selector can also return more than one node — useful for a "sequence" node that should continue down every outgoing edge at once rather than picking a single branch.
 
 ## License
 
